@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kube-py"
+version = "1.0.0"
+license = {file = "LICENSE"}
+authors = [
+    { name="myback", email="54638513+myback@users.noreply.github.com" },
+]
+description = "Kubernetes helper"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/myback/kube-py"
+"Bug Tracker" = "https://github.com/myback/kube-py/issues"
+
+[tool.setuptools.packages.find]
+where=["src"]
