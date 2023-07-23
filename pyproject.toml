@@ -3,13 +3,13 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "kube-py"
-version = "1.0.0"
+name = "kube-ops"
+version = "1.0.1"
 license = {file = "LICENSE"}
 authors = [
     { name="myback", email="54638513+myback@users.noreply.github.com" },
 ]
-description = "Kubernetes helper"
+description = "Kubernetes OOP"
 readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [
@@ -19,8 +19,8 @@ classifiers = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/myback/kube-py"
-"Bug Tracker" = "https://github.com/myback/kube-py/issues"
+"Homepage" = "https://github.com/myback/kube-ops"
+"Bug Tracker" = "https://github.com/myback/kube-ops/issues"
 
 [tool.setuptools.packages.find]
 where=["src"]
