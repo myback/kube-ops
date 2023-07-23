@@ -13,7 +13,7 @@ from kubernetes.config.incluster_config import SERVICE_HOST_ENV_NAME, SERVICE_PO
 from urllib3.exceptions import InsecureRequestWarning
 from urllib3.exceptions import MaxRetryError
 
-from .kube import KubeApi
+from .api import KubeApi
 
 
 class Kubeconfig:

@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kube-ops"
-version = "1.0.1"
+version = "1.0.2"
 license = {file = "LICENSE"}
 authors = [
     { name="myback", email="54638513+myback@users.noreply.github.com" },
 ]
+dynamic = ["dependencies"]
 description = "Kubernetes OOP"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -17,6 +18,9 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "License :: OSI Approved :: MIT License",
 ]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
 
 [project.urls]
 "Homepage" = "https://github.com/myback/kube-ops"
