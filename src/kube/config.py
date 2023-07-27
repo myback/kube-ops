@@ -10,8 +10,7 @@ from urllib.parse import urlparse
 import yaml
 from kubernetes import client
 from kubernetes.config.incluster_config import SERVICE_HOST_ENV_NAME, SERVICE_PORT_ENV_NAME, SERVICE_CERT_FILENAME
-from urllib3.exceptions import InsecureRequestWarning
-from urllib3.exceptions import MaxRetryError
+from urllib3.exceptions import InsecureRequestWarning, MaxRetryError
 
 from .api import KubeApi
 
@@ -67,13 +66,16 @@ class Kubeconfig:
 
         parsed_url = urlparse(server)
         if not parsed_url.port:
-            server = f'{server}:443'
+            server = f'http://{parsed_url.netloc}:443'
             parsed_url = urlparse(server)
 
         namespace = kwargs.get('namespace', 'default')
 
+        ca_cert = None
         try:
-            KubeApi.from_token(server, token, namespace).configmap_get('kube-root-ca.crt')
+            cm = KubeApi.from_token(server, token, namespace).configmap_get('kube-root-ca.crt')
+            if cm:
+                ca_cert = cm.data.get('ca.crt')
         except MaxRetryError as e:
             raise ValueError(e.reason)
         except client.exceptions.ApiException as e:
@@ -87,7 +89,7 @@ class Kubeconfig:
         cluster_name = kwargs.get('cluster_name', f'{parsed_url.netloc.replace(".", "-")}')
         ctx_name = kwargs.get('context_name', f'{namespace}/{cluster_name}/token-{tok}')
         user = kwargs.get('user', f'token-{tok}/{cluster_name}')
-        ca_cert = kwargs.get('ca_cert')
+        ca_cert = kwargs.get('ca_cert', ca_cert)
         insecure_skip_tls_verify = kwargs.get('skip_tls_verify', False)
 
         if not insecure_skip_tls_verify and not ca_cert:
