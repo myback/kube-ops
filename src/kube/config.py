@@ -3,14 +3,13 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
-import warnings
 from pathlib import Path
 from urllib.parse import urlparse
 
 import yaml
 from kubernetes import client
 from kubernetes.config.incluster_config import SERVICE_HOST_ENV_NAME, SERVICE_PORT_ENV_NAME, SERVICE_CERT_FILENAME
-from urllib3.exceptions import InsecureRequestWarning, MaxRetryError
+from urllib3.exceptions import MaxRetryError
 
 from .api import KubeApi
 
@@ -98,7 +97,6 @@ class Kubeconfig:
         cluster = {"server": server}
         if insecure_skip_tls_verify:
             cluster['insecure-skip-tls-verify'] = insecure_skip_tls_verify
-            warnings.simplefilter(action="ignore", category=InsecureRequestWarning)
 
         if ca_cert:
             if ca_cert.startswith('-----BEGIN CERTIFICATE-----'):
@@ -126,14 +124,17 @@ class Kubeconfig:
         filepath.parent.mkdir(0o755, True, True)
 
         with open(filepath, 'w') as f:
-            yaml.safe_dump({
-                "apiVersion": "v1",
-                "kind": "Config",
-                "current-context": self.__current_context,
-                "preferences": {},
-                "clusters": [{"name": k, "cluster": v} for k, v in self.__clusters.items()],
-                "contexts": [{"name": k, "context": v} for k, v in self.__contexts.items()],
-                "users": [{"name": k, "user": v} for k, v in self.__users.items()]
-            }, f)
+            self.dump(f)
 
         os.chmod(filepath, 0o600)
+
+    def dump(self, stream=None):
+        yaml.safe_dump({
+            "apiVersion": "v1",
+            "kind": "Config",
+            "current-context": self.__current_context,
+            "preferences": {},
+            "clusters": [{"name": k, "cluster": v} for k, v in self.__clusters.items()],
+            "contexts": [{"name": k, "context": v} for k, v in self.__contexts.items()],
+            "users": [{"name": k, "user": v} for k, v in self.__users.items()]
+        }, stream)

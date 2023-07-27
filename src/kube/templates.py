@@ -1,8 +1,9 @@
+import base64
 from copy import deepcopy
 
 from kubernetes import client
 
-from .enums import ImagePullPolicy
+from .enums import ImagePullPolicy, MatchExprOperator
 
 
 def dict_str(**kwargs):
@@ -51,15 +52,15 @@ class V1Primitive:
     def set_immutable(self, b: bool):
         self._immutable = b
 
-    def set(self, k: str, v):
-        self._string_data[k] = v
+    def set(self, k: str, v: str):
+        self._binary_data[k] = self.to_base64(v)
 
     def set_default(self, k: str, v):
-        return self._string_data.setdefault(k, v)
+        return self._string_data.setdefault(k, self.to_base64(v))
 
-    # TODO: will be encoded twice if set to base64 encoded value
     def set_data(self, **kwargs):
-        self._string_data = dict_str(**kwargs)
+        self._string_data = dict_str(
+            **{k: self.to_base64(v) for k, v in kwargs.items()})
 
     def set_string(self, k: str, v: str):
         self._string_data[k] = v
@@ -69,6 +70,9 @@ class V1Primitive:
 
     def set_string_data(self, **kwargs):
         self._string_data = dict_str(**kwargs)
+
+    def to_base64(self, v: str) -> str:
+        return base64.b64encode(v.encode()).decode()
 
 
 class Container:
@@ -347,3 +351,27 @@ class PodTemplateSpec(_TemplateSpec):
 class JobTemplateSpec(_TemplateSpec):
     def __init__(self, c: Container):
         super().__init__(c, client.V1JobTemplateSpec())
+
+
+class LabelSelector:
+    def __init__(self):
+        self._selector = client.V1LabelSelector()
+
+    @property
+    def manifest(self) -> client.V1LabelSelector:
+        return deepcopy(self._selector)
+
+    def set_selector_match_labels(self, **kwargs):
+        self._selector.match_labels = dict_str(**kwargs)
+
+    def add_selector_match_expressions(self, key: str, operator: MatchExprOperator, values: list[str]):
+        if self._selector.match_expressions:
+            for e in self._selector.match_expressions:
+                if e.key == key and e.operator == operator.value:
+                    return
+        else:
+            self._selector.match_expression = []
+
+        self._selector.match_expression.append(
+            client.V1LabelSelectorRequirement(key=key, operator=operator.value, values=values)
+        )

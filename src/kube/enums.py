@@ -48,3 +48,13 @@ class MatchExprOperator(enum.StrEnum):
 class VolumeModes(enum.StrEnum):
     Filesystem = 'Filesystem'
     Block = 'Block'
+
+
+class UpdateStrategy(enum.StrEnum):
+    RollingUpdate = 'RollingUpdate'
+    Recreate = 'Recreate'
+
+
+class PodManagementPolicy(enum.StrEnum):
+    OrderedReady = 'OrderedReady'
+    Parallel = 'Parallel'

@@ -15,8 +15,6 @@ from kubernetes.config.incluster_config import SERVICE_HOST_ENV_NAME, \
     SERVICE_PORT_ENV_NAME, SERVICE_CERT_FILENAME
 from kubernetes.stream import stream, ws_client
 
-client.rest.logger.setLevel(logging.WARNING)
-
 
 class CustomObjectDef(typing.NamedTuple):
     """
@@ -135,7 +133,10 @@ class JobStatus(PodStatus):
 
 
 class KubeApi:
-    def __init__(self, namespace: str = None, conf: client.Configuration = None):
+    def __init__(
+            self, namespace: str = None, conf:
+            client.Configuration = None):
+
         self._ns = None
         self._conf = None
 
@@ -145,7 +146,8 @@ class KubeApi:
         else:
             if self.is_use_in_cluster():
                 kube_config.load_incluster_config()
-                self._ns = Path(SERVICE_CERT_FILENAME).parent.joinpath('namespace').read_text()
+                self._ns = Path(SERVICE_CERT_FILENAME).parent \
+                    .joinpath('namespace').read_text()
             else:
                 kube_config.load_kube_config()
 
@@ -204,6 +206,10 @@ class KubeApi:
     @property
     def custom_object_api(self):
         return client.CustomObjectsApi(self._conf)
+
+    @property
+    def rbac_authorization_v1_api(self):
+        return client.RbacAuthorizationV1Api(self._conf)
 
     def _exec(self,
               pod_name: str,
@@ -277,7 +283,8 @@ class KubeApi:
         return self._exec(pod_name, command, stdout, stderr, **kwargs)
 
     def get_logs(self, pod_name: str, container: str = None,
-                 tail_lines: int = None, follow: bool = True, namespace: str = None):
+                 tail_lines: int = None, follow: bool = True,
+                 namespace: str = None):
         """
         Read logs from container.
 
@@ -324,7 +331,8 @@ class KubeApi:
         finally:
             f.close()
 
-    def read_configmap(self, name: str, namespace: str = None) -> dict[str, str] | None:
+    def read_configmap(self, name: str,
+                       namespace: str = None) -> dict[str, str] | None:
         """
         Get ConfigMap's data
         :param name: ConfigMap name.
@@ -338,7 +346,8 @@ class KubeApi:
 
         return cm.data
 
-    def read_secret(self, name: str, namespace: str = None) -> dict[str, str] | None:
+    def read_secret(self, name: str,
+                    namespace: str = None) -> dict[str, str] | None:
         """
         Get Secret's data
         :param name: Secret name.
@@ -380,21 +389,21 @@ class KubeApi:
 
         ns = kwargs.pop('namespace', self._ns)
         try:
-            if custom_object_def is not None:
-                resp = func(
+            if custom_object_def:
+                args = [
                     custom_object_def.group,
                     custom_object_def.version,
-                    ns,
                     custom_object_def.plural,
-                    obj_name,
-                    **kwargs
-                )
-            else:
+                    obj_name
+                ]
                 if namespaced:
-                    resp = func(obj_name, ns, **kwargs)
-                else:
-                    resp = func(obj_name, **kwargs)
+                    args.insert(2, ns)
+            else:
+                args = [obj_name]
+                if namespaced:
+                    args.append(ns)
 
+            resp = func(*args, **kwargs)
             logging.debug('Kubernetes API Response: %s', resp)
 
             return resp
@@ -407,6 +416,22 @@ class KubeApi:
                 raise
 
             logging.error(e)
+
+    def _delete(self, func, name: str, **kwargs):
+        kwargs.setdefault('propagation_policy', "Foreground")
+        check_err = kwargs.pop('check_err', False)
+        namespaced = kwargs.pop('namespaced', True)
+        co = kwargs.pop('custom_object_def', None)
+
+        return self._wrapper(func, name, check_err,
+                             namespaced=namespaced,
+                             custom_object_def=co,
+                             **kwargs)
+
+    def _list(self, func, **kwargs):
+        ns = kwargs.pop('namespace', self._ns)
+
+        return func(ns, **kwargs)
 
     def _wrapper_create(self, func, obj, check_err: bool, *,
                         namespaced: bool = True, **kwargs):
@@ -438,28 +463,110 @@ class KubeApi:
 
             logging.error(e)
 
+    def cluster_role_create(self, sec: client.V1ClusterRole, *,
+                            check_err: bool = True,
+                            **kwargs) -> client.V1ClusterRole:
+        """
+        Create ClusterRole.
+        """
+
+        return self._wrapper_create(
+            self.rbac_authorization_v1_api.create_cluster_role,
+            sec, check_err=check_err,
+            namespaced=False, **kwargs)
+
+    def cluster_role_delete(self, name: str,
+                            **kwargs) -> client.V1ClusterRole | None:
+        """
+        Delete ClusterRole by name.
+        """
+
+        return self._delete(self.rbac_authorization_v1_api.delete_cluster_role,
+                            name, namespaced=False, **kwargs)
+
+    def cluster_role_get(self, name: str, *, check_err: bool = True,
+                         **kwargs) -> client.V1ClusterRole | None:
+        """
+        Get ClusterRole.
+        """
+
+        return self._wrapper(self.rbac_authorization_v1_api.read_cluster_role,
+                             name, check_err, namespaced=False, **kwargs)
+
+    def cluster_role_list(self, **kwargs) -> client.V1ClusterRoleList:
+        """
+        List all ClusterRoles.
+        """
+
+        return self.rbac_authorization_v1_api.list_cluster_role(**kwargs)
+
+    def cluster_role_binding_create(self, sec: client.V1ClusterRoleBinding, *,
+                                    check_err: bool = True,
+                                    **kwargs) -> client.V1ClusterRoleBinding:
+        """
+        Create ClusterRoleBinding.
+        """
+
+        return self._wrapper_create(
+            self.rbac_authorization_v1_api.create_cluster_role_binding,
+            sec, check_err=check_err, namespaced=False, **kwargs)
+
+    def cluster_role_binding_delete(self, name: str,
+                                    **kwargs
+                                    ) -> client.V1ClusterRoleBinding | None:
+        """
+        Delete ClusterRoleBinding by name.
+        """
+
+        return self._delete(
+            self.rbac_authorization_v1_api.delete_cluster_role_binding,
+            name, namespaced=False, **kwargs)
+
+    def cluster_role_binding_get(self, name: str, *,
+                                 check_err: bool = True,
+                                 **kwargs
+                                 ) -> client.V1ClusterRoleBinding | None:
+        """
+        Get ClusterRoleBinding.
+        """
+
+        return self._wrapper(
+            self.rbac_authorization_v1_api.read_cluster_role_binding,
+            name, check_err, namespaced=False, **kwargs)
+
+    def cluster_role_binding_list(self,
+                                  **kwargs) -> client.V1ClusterRoleBindingList:
+        """
+        List all ClusterRoleBindings.
+        """
+
+        return self.rbac_authorization_v1_api.list_cluster_role_binding(
+            **kwargs)
+
     def configmap_create(self, sec: client.V1ConfigMap, *,
-                         check_err: bool = True, **kwargs) -> client.V1ConfigMap:
+                         check_err: bool = True,
+                         **kwargs) -> client.V1ConfigMap:
         """
-        Create CongMap in current namespace.
-        """
-
-        return self._wrapper_create(self.core_v1.create_namespaced_config_map,
-                                    sec, check_err=check_err, **kwargs)
-
-    def configmap_delete(self, name: str, **kwargs) -> client.V1ConfigMap | None:
-        """
-        Delete Configmap by name in current namespace.
+        Create ConfigMap in current namespace.
         """
 
-        kwargs.setdefault('propagation_policy', "Foreground")
-        return self._wrapper(self.core_v1.delete_namespaced_config_map,
-                             name, False, **kwargs)
+        return self._wrapper_create(
+            self.core_v1.create_namespaced_config_map,
+            sec, check_err=check_err, **kwargs)
+
+    def configmap_delete(self, name: str,
+                         **kwargs) -> client.V1ConfigMap | None:
+        """
+        Delete ConfigMap by name in current namespace.
+        """
+
+        return self._delete(self.core_v1.delete_namespaced_config_map,
+                            name, **kwargs)
 
     def configmap_get(self, name: str, *, check_err: bool = True,
                       **kwargs) -> client.V1ConfigMap | None:
         """
-        Get Configmap by name in current namespace.
+        Get ConfigMap by name in current namespace.
         """
 
         return self._wrapper(self.core_v1.read_namespaced_config_map,
@@ -467,11 +574,10 @@ class KubeApi:
 
     def configmap_list(self, **kwargs) -> client.V1ConfigMapList:
         """
-        List all Configmaps in current namespace.
+        List all ConfigMaps in current namespace.
         """
 
-        ns = kwargs.pop('namespace', self._ns)
-        return self.core_v1.list_namespaced_config_map(ns, **kwargs)
+        return self._list(self.core_v1.list_namespaced_config_map, **kwargs)
 
     def cron_job_create(self, cronjob: client.V1CronJob, *,
                         check_err: bool = True, **kwargs) -> client.V1CronJob:
@@ -487,9 +593,8 @@ class KubeApi:
         Delete CronJob by name in current namespace.
         """
 
-        kwargs.setdefault('propagation_policy', "Foreground")
-        return self._wrapper(self.batch_v1.delete_namespaced_cron_job,
-                             name, False, **kwargs)
+        return self._delete(self.batch_v1.delete_namespaced_cron_job,
+                            name, **kwargs)
 
     def cron_job_get(self, name: str, *, check_err: bool = True,
                      **kwargs) -> client.V1CronJob | None:
@@ -505,8 +610,7 @@ class KubeApi:
         List all CronJobs in current namespace.
         """
 
-        ns = kwargs.pop('namespace', self._ns)
-        return self.batch_v1.list_namespaced_cron_job(ns, **kwargs)
+        return self._list(self.batch_v1.list_namespaced_cron_job, **kwargs)
 
     def custom_object_create(self, body, co: CustomObjectDef, *,
                              namespaced: bool = True,
@@ -552,11 +656,10 @@ class KubeApi:
         if namespaced:
             func = self.custom_object_api.delete_namespaced_custom_object
 
-        kwargs.setdefault('propagation_policy', "Foreground")
-        return self._wrapper(func, name, False,
-                             namespaced=namespaced,
-                             custom_object_def=co,
-                             **kwargs)
+        return self._delete(func, name,
+                            namespaced=namespaced,
+                            custom_object_def=co,
+                            **kwargs)
 
     def custom_object_list(self, co: CustomObjectDef, *,
                            namespaced: bool = True,
@@ -566,14 +669,12 @@ class KubeApi:
         """
 
         args = [co.group, co.version, co.plural]
+        func = self.custom_object_api.list_cluster_custom_object
         if namespaced:
             args.insert(2, kwargs.pop('namespace', self._ns))
+            func = self.custom_object_api.list_namespaced_custom_object
 
-            return self.custom_object_api.list_namespaced_custom_object(
-                *args, **kwargs)
-        else:
-            return self.custom_object_api.list_cluster_custom_object(
-                *args, **kwargs)
+        return func(*args, **kwargs)
 
     def job_create(self, job: client.V1Job, *, check_err: bool = True,
                    **kwargs) -> client.V1Job:
@@ -589,9 +690,8 @@ class KubeApi:
         Delete Job by name in current namespace.
         """
 
-        kwargs.setdefault('propagation_policy', "Foreground")
-        return self._wrapper(self.batch_v1.delete_namespaced_job,
-                             name, False, **kwargs)
+        return self._delete(self.batch_v1.delete_namespaced_job, name,
+                            **kwargs)
 
     def job_get(self, name: str, *, check_err: bool = True,
                 **kwargs) -> client.V1Job | None:
@@ -606,10 +706,10 @@ class KubeApi:
         List all Jobs in current namespace.
         """
 
-        ns = kwargs.pop('namespace', self._ns)
-        return self.batch_v1.list_namespaced_job(ns, **kwargs)
+        return self._list(self.batch_v1.list_namespaced_job, **kwargs)
 
-    def deployment_create(self, deploy: client.V1Deployment, *, check_err: bool = True,
+    def deployment_create(self, deploy: client.V1Deployment, *,
+                          check_err: bool = True,
                           **kwargs) -> client.V1Deployment | None:
         """
         Create Deployment in current namespace.
@@ -618,14 +718,14 @@ class KubeApi:
         return self._wrapper_create(self.apps_v1.create_namespaced_deployment,
                                     deploy, check_err=check_err, **kwargs)
 
-    def deployment_delete(self, name: str, **kwargs) -> client.V1Deployment | None:
+    def deployment_delete(self, name: str,
+                          **kwargs) -> client.V1Deployment | None:
         """
         Delete Deployment in current namespace
         """
 
-        kwargs.setdefault('propagation_policy', "Foreground")
-        return self._wrapper(self.apps_v1.delete_namespaced_deployment,
-                             name, False, **kwargs)
+        return self._delete(self.apps_v1.delete_namespaced_deployment, name,
+                            **kwargs)
 
     def deployment_get(self, name: str, *, check_err: bool = True,
                        **kwargs) -> client.V1Deployment | None:
@@ -649,8 +749,9 @@ class KubeApi:
         Get Ingres by name in current namespace.
         """
 
-        return self._wrapper_create(self.networking_v1.create_namespaced_ingress,
-                                    name, check_err, **kwargs)
+        return self._wrapper_create(
+            self.networking_v1.create_namespaced_ingress,
+            name, check_err, **kwargs)
 
     def ingress_delete(self, name: str, *, check_err: bool = True,
                        **kwargs) -> client.V1Ingress | None:
@@ -670,16 +771,17 @@ class KubeApi:
         return self._wrapper(self.networking_v1.read_namespaced_ingress,
                              name, check_err, **kwargs)
 
-    def ingress_list(self, **kwargs) -> client.V1Ingress:
+    def ingress_list(self, **kwargs) -> client.V1IngressList:
         """
         List all Ingresses in current namespace.
         """
 
-        ns = kwargs.pop('namespace', self._ns)
-        return self.networking_v1.list_namespaced_ingress(ns, **kwargs)
+        return self._list(self.networking_v1.list_namespaced_ingress,
+                          **kwargs)
 
     def namespace_create(self, ns: client.V1Namespace, *,
-                         check_err: bool = False, **kwargs) -> client.V1Namespace:
+                         check_err: bool = False,
+                         **kwargs) -> client.V1Namespace:
         """
         Create Namespace.
         """
@@ -687,14 +789,14 @@ class KubeApi:
         return self._wrapper_create(self.core_v1.create_namespace,
                                     ns, check_err, namespaced=False, **kwargs)
 
-    def namespace_delete(self, name: str, **kwargs) -> client.V1Namespace | None:
+    def namespace_delete(self, name: str,
+                         **kwargs) -> client.V1Namespace | None:
         """
         Delete Namespace by name.
         """
 
-        kwargs.setdefault('propagation_policy', "Foreground")
-        return self._wrapper(self.core_v1.delete_namespace,
-                             name, False, namespaced=False, **kwargs)
+        return self._delete(self.core_v1.delete_namespace,
+                            name, namespaced=False, **kwargs)
 
     def namespace_get(self, name: str, **kwargs) -> client.V1Namespace | None:
         """
@@ -725,9 +827,7 @@ class KubeApi:
         Delete Pod by name in current namespace.
         """
 
-        kwargs.setdefault('propagation_policy', "Foreground")
-        return self._wrapper(self.core_v1.delete_namespaced_pod,
-                             name, False, **kwargs)
+        return self._delete(self.core_v1.delete_namespaced_pod, name, **kwargs)
 
     def pod_get(self, name: str, *, check_err: bool = True,
                 **kwargs) -> client.V1Pod | None:
@@ -743,11 +843,11 @@ class KubeApi:
         List all Pods in current namespace.
         """
 
-        ns = kwargs.pop('namespace', self._ns)
-        return self.core_v1.list_namespaced_pod(ns, **kwargs)
+        return self._list(self.core_v1.list_namespaced_pod, **kwargs)
 
     def pvc_create(self, pvc: client.V1PersistentVolumeClaim, *,
-                   check_err: bool = True, **kwargs) -> client.V1PersistentVolumeClaim:
+                   check_err: bool = True,
+                   **kwargs) -> client.V1PersistentVolumeClaim:
         """
         Create PersistentVolumeClaim in current namespace.
         """
@@ -756,14 +856,15 @@ class KubeApi:
             self.core_v1.create_namespaced_persistent_volume_claim,
             pvc, check_err=check_err, **kwargs)
 
-    def pvc_delete(self, name: str, **kwargs) -> client.V1PersistentVolumeClaim | None:
+    def pvc_delete(self, name: str,
+                   **kwargs) -> client.V1PersistentVolumeClaim | None:
         """
         Delete PersistentVolumeClaim by name in current namespace.
         """
 
-        kwargs.setdefault('propagation_policy', "Foreground")
-        return self._wrapper(self.core_v1.delete_namespaced_persistent_volume_claim,
-                             name, False, **kwargs)
+        return self._delete(
+            self.core_v1.delete_namespaced_persistent_volume_claim,
+            name, **kwargs)
 
     def pvc_get(self, name: str, *, check_err: bool = True,
                 **kwargs) -> client.V1PersistentVolumeClaim | None:
@@ -771,16 +872,92 @@ class KubeApi:
         Get PersistentVolumeClaim by name in current namespace.
         """
 
-        return self._wrapper(self.core_v1.read_namespaced_persistent_volume_claim,
-                             name, check_err, **kwargs)
+        return self._wrapper(
+            self.core_v1.read_namespaced_persistent_volume_claim,
+            name, check_err, **kwargs)
 
     def pvc_list(self, **kwargs) -> client.V1PersistentVolumeClaimList:
         """
         List all PersistentVolumeClaims in current namespace.
         """
 
-        ns = kwargs.pop('namespace', self._ns)
-        return self.core_v1.list_namespaced_persistent_volume_claim(ns, **kwargs)
+        return self._list(self.core_v1.list_namespaced_persistent_volume_claim,
+                          **kwargs)
+
+    def role_create(self, sec: client.V1Role, *,
+                    check_err: bool = True, **kwargs) -> client.V1Role:
+        """
+        Create RoleBinding.
+        """
+
+        return self._wrapper_create(
+            self.rbac_authorization_v1_api.create_namespaced_role,
+            sec, check_err=check_err, namespaced=False, **kwargs)
+
+    def role_delete(self, name: str, **kwargs) -> client.V1Role | None:
+        """
+        Delete Role by name.
+        """
+
+        return self._delete(
+            self.rbac_authorization_v1_api.delete_namespaced_role,
+            name, **kwargs)
+
+    def role_get(self, name: str, *, check_err: bool = True,
+                 **kwargs) -> client.V1Role | None:
+        """
+        Get RoleBinding.
+        """
+
+        return self._wrapper(
+            self.rbac_authorization_v1_api.read_namespaced_role,
+            name, check_err, **kwargs)
+
+    def role_list(self, **kwargs) -> client.V1RoleList:
+        """
+        List all RoleBindings.
+        """
+
+        return self._list(self.rbac_authorization_v1_api.list_namespaced_role,
+                          **kwargs)
+
+    def role_binding_create(self, sec: client.V1RoleBinding, *,
+                            check_err: bool = True, **kwargs) -> client.V1RoleBinding:
+        """
+        Create RoleBinding.
+        """
+
+        return self._wrapper_create(
+            self.rbac_authorization_v1_api.create_namespaced_role_binding,
+            sec, check_err=check_err, namespaced=False, **kwargs)
+
+    def role_binding_delete(self, name: str, **kwargs) -> client.V1RoleBinding | None:
+        """
+        Delete RoleBinding by name.
+        """
+
+        return self._delete(
+            self.rbac_authorization_v1_api.delete_namespaced_role_binding,
+            name, **kwargs)
+
+    def role_binding_get(self, name: str, *, check_err: bool = True,
+                         **kwargs) -> client.V1RoleBinding | None:
+        """
+        Get RoleBinding.
+        """
+
+        return self._wrapper(
+            self.rbac_authorization_v1_api.read_namespaced_role_binding,
+            name, check_err, **kwargs)
+
+    def role_binding_list(self, **kwargs) -> client.V1RoleBindingList:
+        """
+        List all RoleBindings.
+        """
+
+        return self._list(
+            self.rbac_authorization_v1_api.list_namespaced_role_binding,
+            **kwargs)
 
     def secret_get(self, name: str, *, check_err: bool = True,
                    **kwargs) -> client.V1Secret | None:
@@ -805,17 +982,15 @@ class KubeApi:
         Delete Secret by name in current namespace.
         """
 
-        kwargs.setdefault('propagation_policy', "Foreground")
-        return self._wrapper(self.core_v1.delete_namespaced_secret,
-                             name, False, **kwargs)
+        return self._delete(self.core_v1.delete_namespaced_secret,
+                            name, **kwargs)
 
     def secret_list(self, **kwargs) -> client.V1SecretList:
         """
         List all Secrets in current namespace.
         """
 
-        ns = kwargs.pop('namespace', self._ns)
-        return self.core_v1.list_namespaced_secret(ns, **kwargs)
+        return self._list(self.core_v1.list_namespaced_secret, **kwargs)
 
     def service_get(self, name: str, *, check_err: bool = True,
                     **kwargs) -> client.V1Secret | None:
@@ -840,35 +1015,72 @@ class KubeApi:
         Delete Service by name in current namespace.
         """
 
-        kwargs.setdefault('propagation_policy', "Foreground")
-        return self._wrapper(self.core_v1.delete_namespaced_service,
-                             name, False, **kwargs)
+        return self._delete(self.core_v1.delete_namespaced_service,
+                            name, **kwargs)
 
-    def service_list(self, **kwargs) -> client.V1Service:
+    def service_list(self, **kwargs) -> client.V1ServiceList:
         """
         List all Service in current namespace.
         """
 
-        ns = kwargs.pop('namespace', self._ns)
-        return self.core_v1.list_namespaced_service(ns, **kwargs)
+        return self._list(self.core_v1.list_namespaced_service, **kwargs)
 
-    def stateful_set_create(self, sts: client.V1StatefulSet, *, check_err: bool = True,
+    def service_account_get(self, name: str, *, check_err: bool = True,
+                            **kwargs) -> client.V1Secret | None:
+        """
+        Get ServiceAccount by name in current namespace.
+        """
+
+        return self._wrapper(self.core_v1.read_namespaced_service_account,
+                             name, check_err, **kwargs)
+
+    def service_account_create(self, svc: client.V1ServiceAccount, *,
+                               check_err: bool = True,
+                               **kwargs) -> client.V1ServiceAccount:
+        """
+        Create ServiceAccount in current namespace.
+        """
+
+        return self._wrapper_create(
+            self.core_v1.create_namespaced_service_account,
+            svc, check_err=check_err, **kwargs)
+
+    def service_account_delete(self, name: str,
+                               **kwargs) -> client.V1ServiceAccount | None:
+        """
+        Delete ServiceAccount by name in current namespace.
+        """
+
+        return self._delete(self.core_v1.delete_namespaced_service_account,
+                            name, **kwargs)
+
+    def service_account_list(self, **kwargs) -> client.V1ServiceAccountList:
+        """
+        List all ServiceAccount in current namespace.
+        """
+
+        return self._list(self.core_v1.list_namespaced_service_account,
+                          **kwargs)
+
+    def stateful_set_create(self, sts: client.V1StatefulSet, *,
+                            check_err: bool = True,
                             **kwargs) -> client.V1StatefulSet | None:
         """
         Create StatefulSet in current namespace.
         """
 
-        return self._wrapper_create(self.apps_v1.create_namespaced_stateful_set,
-                                    sts, check_err=check_err, **kwargs)
+        return self._wrapper_create(
+            self.apps_v1.create_namespaced_stateful_set,
+            sts, check_err=check_err, **kwargs)
 
-    def stateful_set_delete(self, name: str, **kwargs) -> client.V1StatefulSet | None:
+    def stateful_set_delete(self, name: str,
+                            **kwargs) -> client.V1StatefulSet | None:
         """
         Delete StatefulSet by name in current namespace.
         """
 
-        kwargs.setdefault('propagation_policy', "Foreground")
-        return self._wrapper(self.apps_v1.delete_namespaced_stateful_set,
-                             name, False, **kwargs)
+        return self._delete(self.apps_v1.delete_namespaced_stateful_set,
+                            name, **kwargs)
 
     def stateful_set_get(self, name: str, *, check_err: bool = True,
                          **kwargs) -> client.V1StatefulSet | None:
@@ -884,8 +1096,8 @@ class KubeApi:
         List all StatefulSets in current namespace.
         """
 
-        ns = kwargs.pop('namespace', self._ns)
-        return self.apps_v1.list_namespaced_stateful_set(ns, **kwargs)
+        return self._list(self.apps_v1.list_namespaced_stateful_set,
+                          **kwargs)
 
     def scale_deployment(self, name: str, replicas: int, wait: bool = False,
                          **kwargs) -> client.V1Deployment:

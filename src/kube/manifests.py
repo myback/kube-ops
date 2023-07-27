@@ -1,11 +1,12 @@
-import base64
 import json
 from copy import deepcopy
 
 from kubernetes import client
 
-from .enums import SecretType, ServiceType, IngressRulePathType, PVCAccessMode, MatchExprOperator, VolumeModes
-from .templates import PodSpec, PodTemplateSpec, JobTemplateSpec, Container, V1Primitive, ObjectMetadata, dict_str
+from .enums import SecretType, ServiceType, IngressRulePathType, PVCAccessMode, VolumeModes, UpdateStrategy, \
+    PodManagementPolicy
+from .templates import PodSpec, PodTemplateSpec, JobTemplateSpec, Container, V1Primitive, ObjectMetadata, \
+    LabelSelector, dict_str
 
 
 class Job(PodTemplateSpec, ObjectMetadata):
@@ -117,14 +118,13 @@ class Pod(PodSpec, ObjectMetadata):
         self._pod.metadata.labels = dict_str(**kwargs)
 
 
-class Deployment(PodTemplateSpec, ObjectMetadata):
+class Deployment(PodTemplateSpec, ObjectMetadata, LabelSelector):
     def __init__(self, name: str, c: Container):
         super().__init__(c)
         ObjectMetadata.__init__(self, name)
 
         self._deploy = client.V1Deployment(
             spec=client.V1DeploymentSpec(
-                selector=client.V1LabelSelector(),
                 template=client.V1PodTemplateSpec()
             )
         )
@@ -132,10 +132,8 @@ class Deployment(PodTemplateSpec, ObjectMetadata):
     @property
     def manifest(self) -> client.V1Deployment:
         o = deepcopy(self._deploy)
-        if o.spec.selector.match_expressions is None and o.spec.selector.match_labels is None:
-            o.spec.selector = None
-
         o.metadata = self._metadata
+        o.spec.selector = self._selector
         o.spec.template = super().manifest
         return o
 
@@ -161,36 +159,13 @@ class Deployment(PodTemplateSpec, ObjectMetadata):
     def set_revision_history_limit(self, n: int):
         self._deploy.spec.revision_history_limit = n
 
-    def set_selector_match_labels(self, **kwargs):
-        self._deploy.spec.selector.match_labels = dict_str(**kwargs)
-
-    def add_selector_match_expressions(self, key: str, operator: str, values: list[str]):
-        allow = ['In', 'NotIn', 'Exists', 'DoesNotExist']
-        if operator not in allow:
-            raise ValueError(f'Invalid operator value `{operator}`. Can be one of `{", ".join(allow)}`')
-
-        if self._deploy.spec.selector.match_expressions:
-            for e in self._deploy.spec.selector.match_expressions:
-                if e.key == key and e.operator == operator:
-                    return
-        else:
-            self._deploy.spec.selector.match_expression = []
-
-        self._deploy.spec.selector.match_expression.append(
-            client.V1LabelSelectorRequirement(key=key, operator=operator, values=values)
-        )
-
-    def set_strategy(self, typ: str, max_surge=None, max_unavailable=None):
-        allow = ['RollingUpdate', 'Recreate']
-        if typ not in allow:
-            raise ValueError(f'Invalid strategy type value `{typ}`. Can be one of `{", ".join(allow)}`')
-
+    def set_strategy(self, typ: UpdateStrategy, max_surge=None, max_unavailable=None):
         self._deploy.spec.strategy = client.V1DeploymentStrategy(
-            type=typ,
+            type=typ.value,
             rolling_update=client.V1RollingUpdateDeployment(max_surge=max_surge, max_unavailable=max_unavailable))
 
 
-class StatefulSet(PodTemplateSpec, ObjectMetadata):
+class StatefulSet(PodTemplateSpec, ObjectMetadata, LabelSelector):
     def __init__(self, name: str, c: Container):
         super().__init__(c)
         ObjectMetadata.__init__(self, name)
@@ -200,7 +175,6 @@ class StatefulSet(PodTemplateSpec, ObjectMetadata):
             kind='StatefulSet',
             spec=client.V1StatefulSetSpec(
                 service_name='',
-                selector=client.V1LabelSelector(),
                 template=client.V1PodTemplateSpec()
             )
         )
@@ -208,14 +182,8 @@ class StatefulSet(PodTemplateSpec, ObjectMetadata):
     @property
     def manifest(self) -> client.V1StatefulSet:
         o = deepcopy(self._sts)
-
-        if not o.spec.service_name:
-            raise ValueError('Invalid value for `service_name`, must not be empty')
-
-        if o.spec.selector.match_expressions is None and o.spec.selector.match_labels is None:
-            raise ValueError('Invalid value for `selector`, must not be empty')
-
         o.metadata = self._metadata
+        o.spec.selector = self._selector
         o.spec.template = super().manifest
         return o
 
@@ -237,25 +205,6 @@ class StatefulSet(PodTemplateSpec, ObjectMetadata):
     def set_revision_history_limit(self, n: int):
         self._sts.spec.revision_history_limit = n
 
-    def set_selector_match_labels(self, **kwargs):
-        self._sts.spec.selector.match_labels = dict_str(**kwargs)
-
-    def add_selector_match_expressions(self, key: str, operator: str, values: list[str]):
-        allow = ['In', 'NotIn', 'Exists', 'DoesNotExist']
-        if operator not in allow:
-            raise ValueError(f'Invalid operator value `{operator}`. Can be one of `{", ".join(allow)}`')
-
-        if self._sts.spec.selector.match_expressions:
-            for e in self._sts.spec.selector.match_expressions:
-                if e.key == key and e.operator == operator:
-                    return
-        else:
-            self._sts.spec.selector.match_expression = []
-
-        self._sts.spec.selector.match_expression.append(
-            client.V1LabelSelectorRequirement(key=key, operator=operator, values=values)
-        )
-
     def set_strategy(self, typ: str, max_unavailable=None, partition: int = None):
 
         self._sts.spec.update_strategy = client.V1StatefulSetUpdateStrategy(
@@ -270,12 +219,8 @@ class StatefulSet(PodTemplateSpec, ObjectMetadata):
         o = client.V1StatefulSetPersistentVolumeClaimRetentionPolicy(when_deleted=when_deleted, when_scaled=when_scaled)
         self._sts.spec.persistent_volume_claim_retention_policy = o
 
-    def set_pod_management_policy(self, policy: str):
-        allow = ['OrderedReady', 'Parallel']
-        if policy not in allow:
-            raise ValueError(f'Invalid podManagementPolicy value `{policy}`. Can be one of `{", ".join(allow)}`')
-
-        self._sts.spec.pod_management_policy = policy
+    def set_pod_management_policy(self, policy: PodManagementPolicy):
+        self._sts.spec.pod_management_policy = policy.value
 
     def add_volume_claim_templates(self, pvc: client.V1PersistentVolumeClaim):
         if self._sts.spec.volume_claim_templates:
@@ -296,11 +241,8 @@ class Secret(ObjectMetadata, V1Primitive):
         self._secret = client.V1Secret(
             api_version="v1",
             kind="Secret",
-            type=typ.value,
+            type=typ.value
         )
-
-    def to_base64(self, v: str) -> str:
-        return base64.b64encode(v.encode()).decode()
 
     @property
     def manifest(self):
@@ -335,7 +277,7 @@ class SecretImagePull(Secret):
     @property
     def manifest(self):
         auth = json.dumps({"auths": self._registries})
-        self.set(".dockerconfigjson", self.to_base64(auth))
+        self.set(".dockerconfigjson", auth)
 
         return super().manifest
 
@@ -344,12 +286,24 @@ class SecretTLS(Secret):
     def __init__(self, name: str):
         super().__init__(name, SecretType.TLS)
 
-    def set(self, tls_cert: str, tls_key: str, ca: str = None):
-        if ca:
-            super().set('ca.crt', ca)
+    def set(self, tls_cert: str, tls_key: str, ca_crt: str = None):
+        if ca_crt:
+            super().set('ca.crt', ca_crt)
 
         super().set('tls.crt', tls_cert)
         super().set('tls.key', tls_key)
+
+
+class SecretServiceAccountToken(Secret):
+    def __init__(self, name: str):
+        super().__init__(name, SecretType.ServiceAccountToken)
+
+    def set(self, namespace: str, token: str, ca_crt: str = None):
+        if ca_crt:
+            super().set('ca.crt', ca_crt)
+
+        super().set('namespace', namespace)
+        super().set('token', token)
 
 
 class ConfigMap(ObjectMetadata, V1Primitive):
@@ -474,12 +428,6 @@ class Ingress(ObjectMetadata):
 
     def _ingress_backend(self, service_name: str = None, service_port: int | str = None,
                          ref: client.V1TypedLocalObjectReference = None) -> client.V1IngressBackend:
-        if not service_name and not ref:
-            raise ValueError('Required service_name and port or object reference')
-
-        if service_name and not service_port:
-            raise ValueError(f'Required both arguments service_name and port')
-
         backend = client.V1IngressBackend()
         if ref:
             backend.resource = ref
@@ -511,7 +459,7 @@ class Namespace(ObjectMetadata):
         return ns
 
 
-class PersistentVolumeClaim(ObjectMetadata):
+class PersistentVolumeClaim(ObjectMetadata, LabelSelector):
     def __init__(self, name: str):
         super().__init__(name)
 
@@ -528,6 +476,7 @@ class PersistentVolumeClaim(ObjectMetadata):
     def manifest(self) -> client.V1PersistentVolumeClaim:
         pvc = deepcopy(self._pvc)
         pvc.metadata = self._metadata
+        pvc.spec.selector = self._selector
         return pvc
 
     def set_access_modes(self, *args: PVCAccessMode):
@@ -543,29 +492,6 @@ class PersistentVolumeClaim(ObjectMetadata):
             api_group, kind, name, namespace
         )
 
-    def _check_selector(self):
-        if self._pvc.spec.selector is None:
-            self._pvc.spec.selector = client.V1LabelSelector()
-
-    def add_selector_match_expressions(self, key: str, operator: MatchExprOperator, *values: str):
-        self._check_selector()
-
-        if not self._pvc.spec.selector.match_expressions:
-            self._pvc.spec.selector.match_expressions = []
-
-        select = client.V1LabelSelectorRequirement(
-            key=key,
-            operator=operator.value
-        )
-        if values:
-            select.values = list(values)
-
-        self._pvc.spec.selector.match_expressions.append(select)
-
-    def set_match_labels(self, **kwargs: [str, str]):
-        self._check_selector()
-        self._pvc.spec.selector.match_labels = dict_str(**kwargs)
-
     def set_storage_class_name(self, name: str):
         self._pvc.spec.storage_class_name = name
 
@@ -580,3 +506,131 @@ class PersistentVolumeClaim(ObjectMetadata):
 
     def set_resources_limits(self, size: str):
         self._pvc.spec.resources.limits = {'storage': size}
+
+
+class ServiceAccount(ObjectMetadata):
+    def __init__(self, name):
+        super().__init__(name)
+
+        self._sa = client.V1ServiceAccount(
+            api_version='v1',
+            kind='ServiceAccount'
+        )
+
+    @property
+    def manifest(self) -> client.V1ServiceAccount:
+        sa = deepcopy(self._sa)
+        sa.metadata = self._metadata
+        return sa
+
+    def set_automount_service_account_token(self, b: bool):
+        self._sa.automount_service_account_token = b
+
+    def add_image_pull_secrets(self, name: str):
+        self._sa.image_pull_secrets.append(
+            client.V1LocalObjectReference(name=name))
+
+    def add_secret(self, ref: client.V1ObjectReference):
+        self._sa.secrets.append(ref)
+
+    def add_secret_name(self, name: str):
+        self._sa.secrets.append(
+            client.V1ObjectReference(name=name))
+
+
+class Role(ObjectMetadata):
+    def __init__(self, name: str):
+        super().__init__(name)
+
+        self._role = client.V1Role(
+            api_version='rbac.authorization.k8s.io/v1',
+            kind='Role',
+            rules=[]
+        )
+
+    @property
+    def manifest(self) -> client.V1Role:
+        role = deepcopy(self._role)
+        role.metadata = self._metadata
+        return role
+
+    def add_rule(self, rule: client.V1PolicyRule):
+        self._role.rules.append(rule)
+
+
+class RoleBinding(ObjectMetadata):
+    def __init__(self, name: str):
+        super().__init__(name)
+
+        self._rb = client.V1RoleBinding(
+            api_version='rbac.authorization.k8s.io/v1',
+            kind='RoleBinding',
+            subjects=[]
+        )
+
+    @property
+    def manifest(self) -> client.V1RoleBinding:
+        rb = deepcopy(self._rb)
+        rb.metadata = self._metadata
+        return rb
+
+    def add_role_ref(self, api_group: str, kind: str, name: str):
+        self._rb.role_ref = client.V1RoleRef(
+            api_group=api_group, kind=kind, name=name)
+
+    def add_subject(self, kind: str, name: str, namespace: str, api_group: str = None):
+        self._rb.subjects.append(client.V1Subject(
+            api_group=api_group, kind=kind, name=name, namespace=namespace))
+
+
+class ClusterRole(ObjectMetadata):
+    def __init__(self, name: str):
+        super().__init__(name)
+
+        self._role = client.V1ClusterRole(
+            api_version='rbac.authorization.k8s.io/v1',
+            kind='ClusterRole',
+            rules=[]
+        )
+
+    @property
+    def manifest(self) -> client.V1ClusterRole:
+        role = deepcopy(self._role)
+        role.metadata = self._metadata
+        return role
+
+    def add_rule(self, rule: client.V1PolicyRule):
+        self._role.rules.append(rule)
+
+    def add_aggregation_rule(self, rule: client.V1LabelSelector):
+        if not self._role.aggregation_rule:
+            self._role.aggregation_rule = client.V1AggregationRule(
+                cluster_role_selectors=[]
+            )
+
+        self._role.aggregation_rule.cluster_role_selectors.append(rule)
+
+
+class ClusterRoleBinding(ObjectMetadata):
+    def __init__(self, name: str):
+        super().__init__(name)
+
+        self._crb = client.V1ClusterRoleBinding(
+            api_version='rbac.authorization.k8s.io/v1',
+            kind='ClusterRoleBinding',
+            subjects=[]
+        )
+
+    @property
+    def manifest(self) -> client.V1ClusterRoleBinding:
+        crb = deepcopy(self._crb)
+        crb.metadata = self._metadata
+        return crb
+
+    def add_role_ref(self, api_group: str, kind: str, name: str):
+        self._crb.role_ref = client.V1RoleRef(
+            api_group=api_group, kind=kind, name=name)
+
+    def add_subject(self, kind: str, name: str, namespace: str, api_group: str = None):
+        self._crb.subjects.append(client.V1Subject(
+            api_group=api_group, kind=kind, name=name, namespace=namespace))

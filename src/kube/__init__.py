@@ -3,28 +3,36 @@ from .common import env_from_configmap, env_from_configmap_key_ref, env_from_sec
     env_from_field_ref, empty_dir, volume_from_configmap, volume_from_secret
 from .config import Kubeconfig
 from .enums import ImagePullPolicy, ServiceType, SecretType, PVCAccessMode, IngressRulePathType, MatchExprOperator, \
-    VolumeModes
-from .manifests import ConfigMap, CronJob, Job, Deployment, Ingress, Namespace, Pod, PersistentVolumeClaim, \
-    StatefulSet, Secret, SecretImagePull, SecretTLS, Service
-from .templates import Container
+    VolumeModes, UpdateStrategy, PodManagementPolicy
+from .manifests import ClusterRole, ClusterRoleBinding, ConfigMap, CronJob, Job, Deployment, Ingress, Namespace, Pod, \
+    PersistentVolumeClaim, Role, RoleBinding, StatefulSet, Secret, SecretImagePull, SecretTLS, Service, \
+    ServiceAccount, SecretServiceAccountToken
+from .templates import Container, LabelSelector
 
 __all__ = [
+    'ClusterRole',
+    'ClusterRoleBinding',
     'ConfigMap',
     'Container',
     'CronJob',
     'CustomObjectDef',
     'Deployment',
     'Ingress',
+    'LabelSelector',
     'Job',
     'KubeApi',
     'Kubeconfig',
     'Namespace',
     'Pod',
     'PersistentVolumeClaim',
+    'Role',
+    'RoleBinding',
     'Secret',
     'SecretImagePull',
     'SecretTLS',
     'Service',
+    'ServiceAccount',
+    'SecretServiceAccountToken',
     'StatefulSet',
     'env_from_configmap',
     'env_from_configmap_key_ref',
@@ -41,5 +49,7 @@ __all__ = [
     'PVCAccessMode',
     'IngressRulePathType',
     'MatchExprOperator',
-    'VolumeModes'
+    'VolumeModes',
+    'UpdateStrategy',
+    'PodManagementPolicy'
 ]

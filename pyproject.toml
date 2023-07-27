@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kube-ops"
-version = "1.0.3"
+version = "1.0.4"
 license = {file = "LICENSE"}
 authors = [
     { name="myback", email="54638513+myback@users.noreply.github.com" },
