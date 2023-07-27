@@ -463,7 +463,7 @@ class KubeApi:
 
             logging.error(e)
 
-    def cluster_role_create(self, sec: client.V1ClusterRole, *,
+    def cluster_role_create(self, cr: client.V1ClusterRole, *,
                             check_err: bool = True,
                             **kwargs) -> client.V1ClusterRole:
         """
@@ -472,7 +472,7 @@ class KubeApi:
 
         return self._wrapper_create(
             self.rbac_authorization_v1_api.create_cluster_role,
-            sec, check_err=check_err,
+            cr, check_err=check_err,
             namespaced=False, **kwargs)
 
     def cluster_role_delete(self, name: str,
@@ -500,7 +500,7 @@ class KubeApi:
 
         return self.rbac_authorization_v1_api.list_cluster_role(**kwargs)
 
-    def cluster_role_binding_create(self, sec: client.V1ClusterRoleBinding, *,
+    def cluster_role_binding_create(self, crb: client.V1ClusterRoleBinding, *,
                                     check_err: bool = True,
                                     **kwargs) -> client.V1ClusterRoleBinding:
         """
@@ -509,7 +509,7 @@ class KubeApi:
 
         return self._wrapper_create(
             self.rbac_authorization_v1_api.create_cluster_role_binding,
-            sec, check_err=check_err, namespaced=False, **kwargs)
+            crb, check_err=check_err, namespaced=False, **kwargs)
 
     def cluster_role_binding_delete(self, name: str,
                                     **kwargs
@@ -543,7 +543,7 @@ class KubeApi:
         return self.rbac_authorization_v1_api.list_cluster_role_binding(
             **kwargs)
 
-    def configmap_create(self, sec: client.V1ConfigMap, *,
+    def configmap_create(self, cm: client.V1ConfigMap, *,
                          check_err: bool = True,
                          **kwargs) -> client.V1ConfigMap:
         """
@@ -552,7 +552,7 @@ class KubeApi:
 
         return self._wrapper_create(
             self.core_v1.create_namespaced_config_map,
-            sec, check_err=check_err, **kwargs)
+            cm, check_err=check_err, **kwargs)
 
     def configmap_delete(self, name: str,
                          **kwargs) -> client.V1ConfigMap | None:
@@ -743,7 +743,7 @@ class KubeApi:
 
         return self.apps_v1.list_namespaced_deployment(self._ns, **kwargs)
 
-    def ingress_create(self, name: str, *, check_err: bool = True,
+    def ingress_create(self, ing: client.V1Ingress, *, check_err: bool = True,
                        **kwargs) -> client.V1Ingress:
         """
         Get Ingres by name in current namespace.
@@ -751,7 +751,7 @@ class KubeApi:
 
         return self._wrapper_create(
             self.networking_v1.create_namespaced_ingress,
-            name, check_err, **kwargs)
+            ing, check_err, **kwargs)
 
     def ingress_delete(self, name: str, *, check_err: bool = True,
                        **kwargs) -> client.V1Ingress | None:
@@ -884,7 +884,7 @@ class KubeApi:
         return self._list(self.core_v1.list_namespaced_persistent_volume_claim,
                           **kwargs)
 
-    def role_create(self, sec: client.V1Role, *,
+    def role_create(self, role: client.V1Role, *,
                     check_err: bool = True, **kwargs) -> client.V1Role:
         """
         Create RoleBinding.
@@ -892,7 +892,7 @@ class KubeApi:
 
         return self._wrapper_create(
             self.rbac_authorization_v1_api.create_namespaced_role,
-            sec, check_err=check_err, namespaced=False, **kwargs)
+            role, check_err=check_err, namespaced=False, **kwargs)
 
     def role_delete(self, name: str, **kwargs) -> client.V1Role | None:
         """
@@ -921,7 +921,7 @@ class KubeApi:
         return self._list(self.rbac_authorization_v1_api.list_namespaced_role,
                           **kwargs)
 
-    def role_binding_create(self, sec: client.V1RoleBinding, *,
+    def role_binding_create(self, rb: client.V1RoleBinding, *,
                             check_err: bool = True, **kwargs) -> client.V1RoleBinding:
         """
         Create RoleBinding.
@@ -929,7 +929,7 @@ class KubeApi:
 
         return self._wrapper_create(
             self.rbac_authorization_v1_api.create_namespaced_role_binding,
-            sec, check_err=check_err, namespaced=False, **kwargs)
+            rb, check_err=check_err, namespaced=False, **kwargs)
 
     def role_binding_delete(self, name: str, **kwargs) -> client.V1RoleBinding | None:
         """
@@ -1034,7 +1034,7 @@ class KubeApi:
         return self._wrapper(self.core_v1.read_namespaced_service_account,
                              name, check_err, **kwargs)
 
-    def service_account_create(self, svc: client.V1ServiceAccount, *,
+    def service_account_create(self, sa: client.V1ServiceAccount, *,
                                check_err: bool = True,
                                **kwargs) -> client.V1ServiceAccount:
         """
@@ -1043,7 +1043,7 @@ class KubeApi:
 
         return self._wrapper_create(
             self.core_v1.create_namespaced_service_account,
-            svc, check_err=check_err, **kwargs)
+            sa, check_err=check_err, **kwargs)
 
     def service_account_delete(self, name: str,
                                **kwargs) -> client.V1ServiceAccount | None:
