@@ -138,11 +138,11 @@ class KubeApi:
             client.Configuration = None):
 
         self._ns = None
-        self._conf = None
+        self._api_client = None
 
         if conf:
             client.Configuration().set_default(conf)
-            self._conf = conf
+            self._api_client = client.ApiClient(conf)
         else:
             if self.is_use_in_cluster():
                 kube_config.load_incluster_config()
@@ -189,27 +189,27 @@ class KubeApi:
 
     @property
     def apps_v1(self):
-        return client.AppsV1Api(self._conf)
+        return client.AppsV1Api(self._api_client)
 
     @property
     def core_v1(self):
-        return client.CoreV1Api(self._conf)
+        return client.CoreV1Api(self._api_client)
 
     @property
     def batch_v1(self):
-        return client.BatchV1Api(self._conf)
+        return client.BatchV1Api(self._api_client)
 
     @property
     def networking_v1(self):
-        return client.NetworkingV1Api(self._conf)
+        return client.NetworkingV1Api(self._api_client)
 
     @property
     def custom_object_api(self):
-        return client.CustomObjectsApi(self._conf)
+        return client.CustomObjectsApi(self._api_client)
 
     @property
     def rbac_authorization_v1_api(self):
-        return client.RbacAuthorizationV1Api(self._conf)
+        return client.RbacAuthorizationV1Api(self._api_client)
 
     def _exec(self,
               pod_name: str,
@@ -340,7 +340,7 @@ class KubeApi:
         :return: dict[str, str] or None if secret not found.
         """
 
-        cm = self.configmap_get(name, namespace=namespace)
+        cm = self.configmap_get(name, namespace=namespace or self._ns)
         if not cm:
             return
 
@@ -355,7 +355,7 @@ class KubeApi:
         :return: dict[str, str] or None if secret not found.
         """
 
-        sec = self.secret_get(name, namespace=namespace)
+        sec = self.secret_get(name, namespace=namespace or self._ns)
         if not sec:
             return
 
@@ -1026,7 +1026,7 @@ class KubeApi:
         return self._list(self.core_v1.list_namespaced_service, **kwargs)
 
     def service_account_get(self, name: str, *, check_err: bool = True,
-                            **kwargs) -> client.V1Secret | None:
+                            **kwargs) -> client.V1ServiceAccount | None:
         """
         Get ServiceAccount by name in current namespace.
         """

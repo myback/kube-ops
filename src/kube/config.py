@@ -72,7 +72,7 @@ class Kubeconfig:
 
         ca_cert = None
         try:
-            cm = KubeApi.from_token(server, token, namespace).configmap_get('kube-root-ca.crt')
+            cm = KubeApi.from_token(server, token, namespace).configmap_get('kube-root-ca.crt', check_err=False)
             if cm:
                 ca_cert = cm.data.get('ca.crt')
         except MaxRetryError as e:
@@ -100,7 +100,7 @@ class Kubeconfig:
 
         if ca_cert:
             if ca_cert.startswith('-----BEGIN CERTIFICATE-----'):
-                ca_cert = base64.b64encode(ca_cert).decode()
+                ca_cert = base64.b64encode(ca_cert.encode()).decode()
             cluster['certificate-authority-data'] = ca_cert
 
         self.__clusters.setdefault(cluster_name, cluster)
@@ -128,12 +128,11 @@ class Kubeconfig:
 
         os.chmod(filepath, 0o600)
 
-    def dump(self, stream=None):
-        yaml.safe_dump({
+    def dump(self, stream=None) -> str:
+        return yaml.safe_dump({
             "apiVersion": "v1",
             "kind": "Config",
             "current-context": self.__current_context,
-            "preferences": {},
             "clusters": [{"name": k, "cluster": v} for k, v in self.__clusters.items()],
             "contexts": [{"name": k, "context": v} for k, v in self.__contexts.items()],
             "users": [{"name": k, "user": v} for k, v in self.__users.items()]
