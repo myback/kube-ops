@@ -538,13 +538,17 @@ class ServiceAccount(ObjectMetadata):
             client.V1ObjectReference(name=name))
 
 
-class Role(ObjectMetadata):
-    def __init__(self, name: str):
+class _Role(ObjectMetadata):
+    def __init__(self, name: str, kind: str):
         super().__init__(name)
 
-        self._role = client.V1Role(
+        obj = client.V1Role
+        if kind == 'ClusterRole':
+            obj = client.V1ClusterRole
+
+        self._role = obj(
             api_version='rbac.authorization.k8s.io/v1',
-            kind='Role',
+            kind=kind,
             rules=[]
         )
 
@@ -558,49 +562,54 @@ class Role(ObjectMetadata):
         self._role.rules.append(rule)
 
 
-class RoleBinding(ObjectMetadata):
-    def __init__(self, name: str):
+class _RoleBinding(ObjectMetadata):
+    def __init__(self, name: str, kind: str):
         super().__init__(name)
 
-        self._rb = client.V1RoleBinding(
+        default_role_ref_kind = 'Role'
+        obj = client.V1RoleBinding
+        if kind == 'ClusterRoleBinding':
+            default_role_ref_kind = 'ClusterRole'
+            obj = client.V1ClusterRoleBinding
+
+        self._role_binding = obj(
             api_version='rbac.authorization.k8s.io/v1',
-            kind='RoleBinding',
+            kind=kind,
+            role_ref=client.V1RoleRef('rbac.authorization.k8s.io', default_role_ref_kind, ''),
             subjects=[]
         )
 
     @property
-    def manifest(self) -> client.V1RoleBinding:
-        rb = deepcopy(self._rb)
+    def manifest(self):
+        rb = deepcopy(self._role_binding)
         rb.metadata = self._metadata
         return rb
 
-    def add_role_ref(self, api_group: str, kind: str, name: str):
-        self._rb.role_ref = client.V1RoleRef(
-            api_group=api_group, kind=kind, name=name)
+    def set_role_ref(self, name: str, api_group: str = None, kind: str = None):
+        self._role_binding.role_ref.name = name
+        if api_group:
+            self._role_binding.role_ref.api_group = api_group
+        if kind:
+            self._role_binding.role_ref.kind = kind
 
     def add_subject(self, kind: str, name: str, namespace: str, api_group: str = None):
-        self._rb.subjects.append(client.V1Subject(
+        self._role_binding.subjects.append(client.V1Subject(
             api_group=api_group, kind=kind, name=name, namespace=namespace))
 
 
-class ClusterRole(ObjectMetadata):
+class Role(_Role):
     def __init__(self, name: str):
-        super().__init__(name)
+        super().__init__(name, 'Role')
 
-        self._role = client.V1ClusterRole(
-            api_version='rbac.authorization.k8s.io/v1',
-            kind='ClusterRole',
-            rules=[]
-        )
 
-    @property
-    def manifest(self) -> client.V1ClusterRole:
-        role = deepcopy(self._role)
-        role.metadata = self._metadata
-        return role
+class RoleBinding(_RoleBinding):
+    def __init__(self, name: str):
+        super().__init__(name, 'RoleBinding')
 
-    def add_rule(self, rule: client.V1PolicyRule):
-        self._role.rules.append(rule)
+
+class ClusterRole(_Role):
+    def __init__(self, name: str):
+        super().__init__(name, 'ClusterRole')
 
     def add_aggregation_rule(self, rule: client.V1LabelSelector):
         if not self._role.aggregation_rule:
@@ -611,26 +620,6 @@ class ClusterRole(ObjectMetadata):
         self._role.aggregation_rule.cluster_role_selectors.append(rule)
 
 
-class ClusterRoleBinding(ObjectMetadata):
+class ClusterRoleBinding(_RoleBinding):
     def __init__(self, name: str):
-        super().__init__(name)
-
-        self._crb = client.V1ClusterRoleBinding(
-            api_version='rbac.authorization.k8s.io/v1',
-            kind='ClusterRoleBinding',
-            subjects=[]
-        )
-
-    @property
-    def manifest(self) -> client.V1ClusterRoleBinding:
-        crb = deepcopy(self._crb)
-        crb.metadata = self._metadata
-        return crb
-
-    def add_role_ref(self, api_group: str, kind: str, name: str):
-        self._crb.role_ref = client.V1RoleRef(
-            api_group=api_group, kind=kind, name=name)
-
-    def add_subject(self, kind: str, name: str, namespace: str, api_group: str = None):
-        self._crb.subjects.append(client.V1Subject(
-            api_group=api_group, kind=kind, name=name, namespace=namespace))
+        super().__init__(name, 'ClusterRoleBinding')

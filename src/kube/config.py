@@ -65,7 +65,7 @@ class Kubeconfig:
 
         parsed_url = urlparse(server)
         if not parsed_url.port:
-            server = f'http://{parsed_url.netloc}:443'
+            server = f'https://{parsed_url.netloc}:443'
             parsed_url = urlparse(server)
 
         namespace = kwargs.get('namespace', 'default')

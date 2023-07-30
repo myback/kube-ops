@@ -462,9 +462,8 @@ class KubeApi:
 
     def _list(self, func, **kwargs):
         ns = kwargs.pop('namespace', self._ns)
-        namespaced = kwargs.pop('namespaced', True)
 
-        return func(ns, **kwargs) if namespaced else func(**kwargs)
+        return func(ns, **kwargs)
 
     def _scale(self, func, name: str, replicas: int, wait: bool, **kwargs):
         """
@@ -688,6 +687,7 @@ class KubeApi:
 
         args = [obj.group, obj.version, obj.plural]
         func = self.custom_object_api.list_cluster_custom_object
+
         if namespaced:
             ns = kwargs.pop('namespace', self._ns)
             args.insert(2, ns)
@@ -948,7 +948,7 @@ class KubeApi:
 
         return self._create(
             self.rbac_authorization_v1_api.create_namespaced_role_binding,
-            rb, check_err=check_err, namespaced=False, **kwargs)
+            rb, check_err=check_err, **kwargs)
 
     def role_binding_delete(self, name: str, **kwargs) -> client.V1RoleBinding | None:
         """
