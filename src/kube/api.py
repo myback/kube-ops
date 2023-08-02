@@ -179,7 +179,6 @@ class KubeApi:
         conf = client.Configuration().get_default_copy()
         conf.host = host
         conf.api_key['authorization'] = token
-        conf.api_key_prefix['authorization'] = 'Bearer'
         conf.ssl_ca_cert = ca_cert_data
         if not ca_cert_data:
             conf.verify_ssl = False

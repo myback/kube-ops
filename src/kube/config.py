@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -69,26 +70,36 @@ class Kubeconfig:
             parsed_url = urlparse(server)
 
         namespace = kwargs.get('namespace', 'default')
+        ca_cert_data = None
 
-        ca_cert = None
         try:
-            cm = KubeApi.from_token(server, token, namespace).configmap_get('kube-root-ca.crt', check_err=False)
-            if cm:
-                ca_cert = cm.data.get('ca.crt')
-        except MaxRetryError as e:
-            raise ValueError(e.reason)
-        except client.exceptions.ApiException as e:
-            if e.status == 401:
-                raise ValueError("The token provided is invalid or expired")
+            ca_cert = kwargs.get('ca_cert')
+            if ca_cert:
+                with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+                    f.write(ca_cert)
+                    ca_cert_data = f.name
 
-            raise
+            try:
+                cm = KubeApi.from_token(
+                    server, token, namespace, ca_cert_data=ca_cert_data).configmap_get('kube-root-ca.crt')
+                if cm and not ca_cert:
+                    ca_cert = cm.data.get('ca.crt')
+            except MaxRetryError as e:
+                raise ValueError(e.reason)
+            except client.exceptions.ApiException as e:
+                if e.status == 401:
+                    raise ValueError("The token provided is invalid or expired")
+
+                raise
+        finally:
+            if ca_cert_data:
+                os.remove(ca_cert_data)
 
         tok = base64.b64encode(hashlib.sha256(token.encode()).digest()).decode()[:12]
 
         cluster_name = kwargs.get('cluster_name', f'{parsed_url.netloc.replace(".", "-")}')
         ctx_name = kwargs.get('context_name', f'{namespace}/{cluster_name}/token-{tok}')
         user = kwargs.get('user', f'token-{tok}/{cluster_name}')
-        ca_cert = kwargs.get('ca_cert', ca_cert)
         insecure_skip_tls_verify = kwargs.get('skip_tls_verify', False)
 
         if not insecure_skip_tls_verify and not ca_cert:

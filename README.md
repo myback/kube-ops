@@ -9,7 +9,7 @@ import kube
 container = kube.Container('nginx')
 container.set_image('nginx:alpine')
 
-# Add environment variables to from configmap
+# Add environment variables to configmap
 ## Make configmap
 cm = kube.ConfigMap('nginx')
 cm.set_data(NGINX_ENTRYPOINT_QUIET_LOGS='true')
