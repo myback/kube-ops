@@ -824,20 +824,18 @@ class _RoleWrapper(ObjectMetadata):
 
 
 class _RoleBindingWrapper(ObjectMetadata):
-    def __init__(self, name: str, kind: str):
+    def __init__(self, name: str, cluster_scope: bool = False):
         super().__init__(name)
 
-        default_role_ref_kind = "Role"
-        obj = client.V1RoleBinding
-        if kind == "ClusterRoleBinding":
-            default_role_ref_kind = "ClusterRole"
-            obj = client.V1ClusterRoleBinding
+        kind, obj = "Role", client.V1RoleBinding
+        if cluster_scope:
+            kind, obj = "ClusterRole", client.V1ClusterRoleBinding
 
         self._role_binding = obj(
             api_version="rbac.authorization.k8s.io/v1",
             kind=kind,
             role_ref=client.V1RoleRef(
-                "rbac.authorization.k8s.io", default_role_ref_kind, ""
+                "rbac.authorization.k8s.io", kind, ""
             ),
             subjects=[],
         )
@@ -861,7 +859,7 @@ class _RoleBindingWrapper(ObjectMetadata):
         self, kind: str, name: str, namespace: str, api_group: str = None
     ):
         self._role_binding.subjects.append(
-            client.V1Subject(
+            client.RbacV1Subject(
                 api_group=api_group, kind=kind, name=name, namespace=namespace
             )
         )
@@ -883,7 +881,7 @@ class Role(_RoleWrapper):
 
 class RoleBinding(_RoleBindingWrapper):
     def __init__(self, name: str):
-        super().__init__(name, "RoleBinding")
+        super().__init__(name)
 
     @property
     def manifest(self) -> client.V1RoleBinding:
@@ -919,7 +917,7 @@ class ClusterRole(_RoleWrapper):
 
 class ClusterRoleBinding(_RoleBindingWrapper):
     def __init__(self, name: str):
-        super().__init__(name, "ClusterRoleBinding")
+        super().__init__(name, True)
 
     @property
     def manifest(self) -> client.V1ClusterRoleBinding:
