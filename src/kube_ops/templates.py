@@ -1,4 +1,6 @@
 import base64
+import json
+import typing
 from copy import deepcopy
 
 from kubernetes import client
@@ -52,26 +54,26 @@ class V1Primitive:
     def set_immutable(self, b: bool):
         self._immutable = b
 
-    def set(self, k: str, v: str):
-        self._binary_data[k] = self.to_base64(v)
+    def set(self, **kwargs):
+        for k, v in kwargs.items():
+            self._set_string_data(k, v)
 
-    def set_default(self, k: str, v):
-        return self._string_data.setdefault(k, self.to_base64(v))
+    def _set_binary_data(self, k: str, v: typing.Any):
+        if isinstance(v, str):
+            self._binary_data[k] = self.to_base64(v)
+            return
 
-    def set_data(self, **kwargs):
-        self._string_data = dict_str(
-            **{k: self.to_base64(v) for k, v in kwargs.items()})
+        self._binary_data[k] = self.to_base64(json.dumps(v))
 
-    def set_string(self, k: str, v: str):
-        self._string_data[k] = v
+    def _set_string_data(self, k: str, v: typing.Any):
+        if isinstance(v, str):
+            self._string_data[k] = v
+            return
 
-    def set_default_string(self, k: str, v: str) -> str:
-        return self._string_data.setdefault(k, v)
+        self._string_data[k] = json.dumps(v)
 
-    def set_string_data(self, **kwargs):
-        self._string_data = dict_str(**kwargs)
-
-    def to_base64(self, v: str) -> str:
+    @staticmethod
+    def to_base64(v: str) -> str:
         return base64.b64encode(v.encode()).decode()
 
 
@@ -117,8 +119,15 @@ class Container:
     def set_security_context(self, sc: client.V1SecurityContext):
         self._c.security_context = sc
 
-    def add_port(self, name: str, container_port: int, protocol: str = None, host_ip: str = None,
-                 host_port: int = None):
+    def add_port(
+        self,
+        name: str,
+        container_port: int = 8080,
+        protocol: str = "TCP",
+        host_ip: str = None,
+        host_port: int = None,
+        not_publish: bool = False,
+    ):
         if self._c.ports is None:
             self._c.ports = []
         else:
@@ -126,8 +135,18 @@ class Container:
                 if p.name == name:
                     return
 
-        self._c.ports.append(client.V1ContainerPort(name=name, container_port=container_port, protocol=protocol,
-                                                    host_ip=host_ip, host_port=host_port))
+        p = client.V1ContainerPort(
+            name=name,
+            container_port=container_port,
+            protocol=protocol,
+            host_ip=host_ip,
+            host_port=host_port,
+        )
+
+        if not_publish:
+            p.protocol = None
+
+        self._c.ports.append(p)
 
     def _is_volume_mount_exists(self, name: str) -> bool:
         for vm in self._c.volume_mounts:
@@ -169,10 +188,16 @@ class Container:
             self._c.env_from = []
         else:
             for e in self._c.env_from:
-                if e.secret_ref and e.secret_ref.name == env_from.secret_ref.name:
+                if (
+                    e.secret_ref
+                    and e.secret_ref.name == env_from.secret_ref.name
+                ):
                     return
 
-                if e.config_map_ref and e.config_map_ref.name == env_from.config_map_ref.name:
+                if (
+                    e.config_map_ref
+                    and e.config_map_ref.name == env_from.config_map_ref.name
+                ):
                     return
 
         self._c.env_from.append(env_from)
@@ -183,7 +208,11 @@ class PodSpec:
         self._containers: list[Container] = [c]
         self._init_containers: list[Container] = []
 
-        self._pod_spec = client.V1PodSpec(containers=[])
+        self._pod_spec = client.V1PodSpec(
+            containers=[],
+            automount_service_account_token=False,
+            enable_service_links=False,
+        )
 
     @property
     def manifest(self) -> client.V1PodSpec:
@@ -202,10 +231,10 @@ class PodSpec:
             self._pod_spec.image_pull_secrets = []
         else:
             for s in self._pod_spec.image_pull_secrets:
-                if s['name'] == name:
+                if s["name"] == name:
                     return
 
-        self._pod_spec.image_pull_secrets.append({'name': name})
+        self._pod_spec.image_pull_secrets.append({"name": name})
 
     def add_container(self, c: Container):
         for ce in self._containers:
@@ -224,8 +253,8 @@ class PodSpec:
     def set_affinity(self, af: client.V1Affinity):
         self._pod_spec.affinity = af
 
-    def set_automount_service_account_token(self, b: bool):
-        self._pod_spec.automount_service_account_token = b
+    def enable_automount_service_account_token(self):
+        self._pod_spec.automount_service_account_token = True
 
     def set_dns_config(self, dns_conf: client.V1PodDNSConfig):
         self._pod_spec.dns_config = dns_conf
@@ -233,8 +262,8 @@ class PodSpec:
     def set_dns_policy(self, policy: str):
         self._pod_spec.dns_policy = policy
 
-    def enable_service_links(self, b: bool):
-        self._pod_spec.enable_service_links = b
+    def enable_service_links(self):
+        self._pod_spec.enable_service_links = True
 
     # def add_ephemeral_containers(self):
     #     pass
@@ -247,7 +276,9 @@ class PodSpec:
         else:
             self._pod_spec.host_aliases = []
 
-        self._pod_spec.host_aliases.append(client.V1HostAlias(hostnames=hosts, ip=ip))
+        self._pod_spec.host_aliases.append(
+            client.V1HostAlias(hostnames=hosts, ip=ip)
+        )
 
     def set_host_ipc(self, b: bool):
         self._pod_spec.host_ipc = b
@@ -292,33 +323,78 @@ class PodSpec:
 
         self._pod_spec.volumes.append(vol)
 
-    def _add_volume_mount(self, container_name: str, container_list: list[Container],
-                          volume_name: str, mount_path: str, sub_path: str = None, read_only: bool = None) -> bool:
+    def _add_volume_mount(
+        self,
+        container_name: str,
+        container_list: list[Container],
+        volume_name: str,
+        mount_path: str,
+        sub_path: str = None,
+        read_only: bool = None,
+    ) -> bool:
         for i, c in enumerate(container_list):
             if c.name == container_name:
-                vm = client.V1VolumeMount(name=volume_name, mount_path=mount_path,
-                                          sub_path=sub_path, read_only=read_only)
+                vm = client.V1VolumeMount(
+                    name=volume_name,
+                    mount_path=mount_path,
+                    sub_path=sub_path,
+                    read_only=read_only,
+                )
                 self._containers[i].add_volume_mount(vm)
                 return True
         return False
 
-    def add_volume_to_container(self, container_name: str, vol: client.V1Volume, mount_path: str,
-                                sub_path: str = None, read_only: bool = None):
+    def add_volume_to_container(
+        self,
+        container_name: str,
+        vol: client.V1Volume,
+        mount_path: str,
+        sub_path: str = None,
+        read_only: bool = None,
+    ):
         self._add_volume(vol)
 
-        if not self._add_volume_mount(container_name, self._containers, vol.name, mount_path, sub_path, read_only):
-            raise ValueError(f'`Container` with name `{container_name}` not found in `podSpec`')
+        if not self._add_volume_mount(
+            container_name,
+            self._containers,
+            vol.name,
+            mount_path,
+            sub_path,
+            read_only,
+        ):
+            raise ValueError(
+                f"`Container` with name `{container_name}` not found in `podSpec`"
+            )
 
-    def add_volume_to_init_container(self, container_name: str, vol: client.V1Volume, mount_path: str,
-                                     sub_path: str = None, read_only: bool = None):
+    def add_volume_to_init_container(
+        self,
+        container_name: str,
+        vol: client.V1Volume,
+        mount_path: str,
+        sub_path: str = None,
+        read_only: bool = None,
+    ):
         self._add_volume(vol)
 
-        if not self._add_volume_mount(container_name, self._init_containers, vol.name, mount_path, sub_path, read_only):
-            raise ValueError(f'`InitContainer` with name `{container_name}` not found in `podSpec`')
+        if not self._add_volume_mount(
+            container_name,
+            self._init_containers,
+            vol.name,
+            mount_path,
+            sub_path,
+            read_only,
+        ):
+            raise ValueError(
+                f"`InitContainer` with name `{container_name}` not found in `podSpec`"
+            )
 
 
 class _TemplateSpec(PodSpec):
-    def __init__(self, c: Container, template_spec: client.V1PodTemplateSpec | client.V1JobTemplateSpec):
+    def __init__(
+        self,
+        c: Container,
+        template_spec: client.V1PodTemplateSpec | client.V1JobTemplateSpec,
+    ):
         super().__init__(c)
 
         self._template_spec = template_spec
@@ -364,7 +440,9 @@ class LabelSelector:
     def set_selector_match_labels(self, **kwargs):
         self._selector.match_labels = dict_str(**kwargs)
 
-    def add_selector_match_expressions(self, key: str, operator: MatchExprOperator, values: list[str]):
+    def add_selector_match_expressions(
+        self, key: str, operator: MatchExprOperator, values: list[str]
+    ):
         if self._selector.match_expressions:
             for e in self._selector.match_expressions:
                 if e.key == key and e.operator == operator.value:
@@ -373,5 +451,7 @@ class LabelSelector:
             self._selector.match_expression = []
 
         self._selector.match_expression.append(
-            client.V1LabelSelectorRequirement(key=key, operator=operator.value, values=values)
+            client.V1LabelSelectorRequirement(
+                key=key, operator=operator.value, values=values
+            )
         )

@@ -9,7 +9,11 @@ from urllib.parse import urlparse
 
 import yaml
 from kubernetes import client
-from kubernetes.config.incluster_config import SERVICE_HOST_ENV_NAME, SERVICE_PORT_ENV_NAME, SERVICE_CERT_FILENAME
+from kubernetes.config.incluster_config import (
+    SERVICE_HOST_ENV_NAME,
+    SERVICE_PORT_ENV_NAME,
+    SERVICE_CERT_FILENAME,
+)
 from urllib3.exceptions import MaxRetryError
 
 from .api import KubeApi
@@ -39,12 +43,14 @@ class Kubeconfig:
         token = token_file.read_text()
 
         if not namespace:
-            namespace = token_file.parent.joinpath('namespace').read_text()
+            namespace = token_file.parent.joinpath("namespace").read_text()
 
         svc_host = os.getenv(SERVICE_HOST_ENV_NAME)
         svc_port = os.getenv(SERVICE_PORT_ENV_NAME)
 
-        return self.add(f'https://{svc_host}:{svc_port}', token, namespace=namespace)
+        return self.add(
+            f"https://{svc_host}:{svc_port}", token, namespace=namespace
+        )
 
     def add(self, server: str, token: str, **kwargs) -> Kubeconfig:
         """
@@ -61,61 +67,75 @@ class Kubeconfig:
                                      your HTTPS connections insecure.
         """
 
-        if not server.startswith('https'):
-            raise ValueError('Invalid server URL. URL must be start with https://...')
+        if not server.startswith("https"):
+            raise ValueError(
+                "Invalid server URL. URL must be start with https://..."
+            )
 
         parsed_url = urlparse(server)
         if not parsed_url.port:
-            server = f'https://{parsed_url.netloc}:443'
+            server = f"https://{parsed_url.netloc}:443"
             parsed_url = urlparse(server)
 
-        namespace = kwargs.get('namespace', 'default')
+        namespace = kwargs.get("namespace", "default")
         ca_cert_data = None
 
         try:
-            ca_cert = kwargs.get('ca_cert')
+            ca_cert = kwargs.get("ca_cert")
             if ca_cert:
-                with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+                with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
                     f.write(ca_cert)
                     ca_cert_data = f.name
 
             try:
                 cm = KubeApi.from_token(
-                    server, token, namespace, ca_cert_data=ca_cert_data).configmap_get('kube-root-ca.crt')
+                    server, token, namespace, ca_cert_data=ca_cert_data
+                ).configmap_get("kube-root-ca.crt")
                 if cm and not ca_cert:
-                    ca_cert = cm.data.get('ca.crt')
+                    ca_cert = cm.data.get("ca.crt")
             except MaxRetryError as e:
                 raise ValueError(e.reason)
             except client.exceptions.ApiException as e:
                 if e.status == 401:
-                    raise ValueError("The token provided is invalid or expired")
+                    raise ValueError(
+                        "The token provided is invalid or expired"
+                    )
 
                 raise
         finally:
             if ca_cert_data:
                 os.remove(ca_cert_data)
 
-        tok = base64.b64encode(hashlib.sha256(token.encode()).digest()).decode()[:12]
+        tok = base64.b64encode(
+            hashlib.sha256(token.encode()).digest()
+        ).decode()[:12]
 
-        cluster_name = kwargs.get('cluster_name', f'{parsed_url.netloc.replace(".", "-")}')
-        ctx_name = kwargs.get('context_name', f'{namespace}/{cluster_name}/token-{tok}')
-        user = kwargs.get('user', f'token-{tok}/{cluster_name}')
-        insecure_skip_tls_verify = kwargs.get('skip_tls_verify', False)
+        cluster_name = kwargs.get(
+            "cluster_name", f'{parsed_url.netloc.replace(".", "-")}'
+        )
+        ctx_name = kwargs.get(
+            "context_name", f"{namespace}/{cluster_name}/token-{tok}"
+        )
+        user = kwargs.get("user", f"token-{tok}/{cluster_name}")
+        insecure_skip_tls_verify = kwargs.get("skip_tls_verify", False)
 
         if not insecure_skip_tls_verify and not ca_cert:
-            raise ValueError('Add CA data or set `skip_tls_verify=True`')
+            raise ValueError("Add CA data or set `skip_tls_verify=True`")
 
         cluster = {"server": server}
         if insecure_skip_tls_verify:
-            cluster['insecure-skip-tls-verify'] = insecure_skip_tls_verify
+            cluster["insecure-skip-tls-verify"] = insecure_skip_tls_verify
 
         if ca_cert:
-            if ca_cert.startswith('-----BEGIN CERTIFICATE-----'):
+            if ca_cert.startswith("-----BEGIN CERTIFICATE-----"):
                 ca_cert = base64.b64encode(ca_cert.encode()).decode()
-            cluster['certificate-authority-data'] = ca_cert
+            cluster["certificate-authority-data"] = ca_cert
 
         self.__clusters.setdefault(cluster_name, cluster)
-        self.__contexts.setdefault(ctx_name, {"cluster": cluster_name, "namespace": namespace, "user": user})
+        self.__contexts.setdefault(
+            ctx_name,
+            {"cluster": cluster_name, "namespace": namespace, "user": user},
+        )
         self.__users.setdefault(user, {"token": token})
 
         if not self.__current_context:
@@ -128,23 +148,34 @@ class Kubeconfig:
         Save kubeconfig file.
         """
         if filepath is None:
-            filepath = Path.home().joinpath('.kube/config')
+            filepath = Path.home().joinpath(".kube/config")
         elif isinstance(filepath, str):
             filepath = Path(filepath)
 
         filepath.parent.mkdir(0o755, True, True)
 
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             self.dump(f)
 
         os.chmod(filepath, 0o600)
 
     def dump(self, stream=None) -> str:
-        return yaml.safe_dump({
-            "apiVersion": "v1",
-            "kind": "Config",
-            "current-context": self.__current_context,
-            "clusters": [{"name": k, "cluster": v} for k, v in self.__clusters.items()],
-            "contexts": [{"name": k, "context": v} for k, v in self.__contexts.items()],
-            "users": [{"name": k, "user": v} for k, v in self.__users.items()]
-        }, stream)
+        return yaml.safe_dump(
+            {
+                "apiVersion": "v1",
+                "kind": "Config",
+                "current-context": self.__current_context,
+                "clusters": [
+                    {"name": k, "cluster": v}
+                    for k, v in self.__clusters.items()
+                ],
+                "contexts": [
+                    {"name": k, "context": v}
+                    for k, v in self.__contexts.items()
+                ],
+                "users": [
+                    {"name": k, "user": v} for k, v in self.__users.items()
+                ],
+            },
+            stream,
+        )

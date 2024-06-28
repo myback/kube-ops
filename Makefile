@@ -1,10 +1,10 @@
 .PHONY: build
-build:
-	python -m build -w
+build: clean
+	@hatch build -t wheel
 
 .PHONY: upload
-upload:
-	python -m twine upload dist/*
+upload: build
+	@hatch publish
 
 .PHONY: clean
 clean:
